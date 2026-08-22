@@ -45,7 +45,9 @@ jobs:
       - name: 打包 zip（含 exe + 示例配置）
         shell: pwsh
         run: |
-          $ver = $env:GITHUB_REF_NAME -replace '^v', ''
+          # 手动触发(workflow_dispatch, 无 tag)时 GITHUB_REF_NAME 是分支名, 需回退到 'dev'
+          $ver = ($env:GITHUB_REF_NAME -replace '^v', '')
+          if ($ver -notmatch '^\d') { $ver = 'dev' }
           Compress-Archive -Path release\* -DestinationPath "workbuddy-wild-windows-amd64-v$ver.zip"
 
       - name: 上传构建产物（workflow artifact）
