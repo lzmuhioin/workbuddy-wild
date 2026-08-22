@@ -47,9 +47,16 @@ func UgHeaders(req *http.Request, a *auth.Auth) {
 	req.Header.Set("User-Agent", clientUA)
 	req.Header.Set("Authorization", "Cloud-IDE-JWT "+a.JWT())
 	req.Header.Set("X-User-Region", "CN")
+	// 签到接口 (checkin_credits/claim) 会风控校验设备指纹, 缺了 x-device-id +
+	// 设备指纹头会被 9074 拒绝。device 值来自登录时读取的本机真实设备 ID
+	// (login_trae.realDeviceID), 保证与官方客户端一致。
 	if a.DeviceID != "" {
-		req.Header.Set("X-Device-Id", a.DeviceID)
+		req.Header.Set("x-device-id", a.DeviceID) // 官方客户端用的小写头名 + 真实设备 ID
 	}
+	req.Header.Set("x-device-brand", "Windows")
+	req.Header.Set("x-device-type", "windows")
+	req.Header.Set("x-os-version", OSVersion)
+	req.Header.Set("x-app-version", IdeVersion)
 }
 
 func OAuthHeaders(req *http.Request) {

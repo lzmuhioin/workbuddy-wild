@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"time"
 
 	"github.com/rockswang/workbuddy-wild/internal/auth"
@@ -44,9 +46,47 @@ type state struct {
 
 func NewClient() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
 
+var netConfigPat = regexp.MustCompile(`device_id&#\*([^@$]+)@\$\*`)
+
+// realDeviceID 尽力读取本机未打开的官方 Trae 客户端注册的设备 ID。
+//
+// Trae SOLO CN 签到接口 (api.trae.cn/trae/api/v2/ug/checkin_credits/claim) 会校验
+// `x-device-id` 是否为账号绑定的真实设备: 用随机值会被风控返回 code=9074
+// 「当前参与用户太多，请稍后再试」。官方客户端把注册设备 ID 存在
+// `tt_net_config.config` 的 `device_id&#*<id>@$*` 字段里 (Windows:
+// %APPDATA%\TRAE SOLO CN\ahanet	t_net_config.config)。
+// 读不到时返回空串, 由调用方回退到随机值。
+func realDeviceID() string {
+	var cfgPath string
+	switch runtime.GOOS {
+	case "windows":
+		cfgPath = filepath.Join(os.Getenv("APPDATA"), "TRAE SOLO CN", "ahanet", "tt_net_config.config")
+	case "darwin":
+		home, _ := os.UserHomeDir()
+		cfgPath = filepath.Join(home, "Library", "Application Support", "TRAE SOLO CN", "ahanet", "tt_net_config.config")
+	default: // linux 等
+		home, _ := os.UserHomeDir()
+		cfgPath = filepath.Join(home, ".config", "TRAE SOLO CN", "ahanet", "tt_net_config.config")
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return ""
+	}
+	m := netConfigPat.FindSubmatch(raw)
+	if m == nil {
+		return ""
+	}
+	return string(m[1])
+}
+
 // Start 启动本地一次性回调监听，返回 Trae 授权 URL。
 func Start(client *http.Client, statePath string) (string, error) {
-	machineID, deviceID := randHex(16), randHex(16)
+	// 优先复用本机官方 Trae 客户端的真实设备 ID, 避免签到被 9074 风控; 读不到才随机生成。
+	machineID := randHex(16)
+	deviceID := realDeviceID()
+	if deviceID == "" {
+		deviceID = randHex(16)
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
